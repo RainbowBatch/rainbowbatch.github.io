@@ -1,3 +1,25 @@
+function debounce(func, wait, immediate) {
+  var timeout;
+
+  return function executedFunction() {
+    var context = this;
+    var args = arguments;
+
+    var later = function () {
+      timeout = null;
+      if (!immediate) func.apply(context, args);
+    };
+
+    var callNow = immediate && !timeout;
+
+    clearTimeout(timeout);
+
+    timeout = setTimeout(later, wait);
+
+    if (callNow) func.apply(context, args);
+  };
+}
+
 const lerp = (x, y, a) => x * (1 - a) + y * a;
 
 const hashCode = (s) =>
@@ -305,7 +327,7 @@ function findTimeInBlock(block, index) {
   const duration = block.end_timestamp - block.start_timestamp;
 
   // Calculate the time offset of the given index within the block
-  const offset = index / block.text.length * duration;
+  const offset = (index / block.text.length) * duration;
 
   // Limit the returned result to be within the block times.
   if (offset < 0) {
@@ -318,21 +340,25 @@ function findTimeInBlock(block, index) {
   return block.start_timestamp + offset;
 }
 
-
 // Keep track of the last index we looked up, since many times we will deal with sequences of similar lookups and we can make the binary search much more efficient.
 let findBlockIndex__global__prevBlockIndex = null;
 
 function findTranscriptBlockIndex(transcript, time) {
   const n = transcript.length;
 
-  let left = (findBlockIndex__global__prevBlockIndex === null) ?
-    0 :
-    findBlockIndex__global__prevBlockIndex;
-  let right = (findBlockIndex__global__prevBlockIndex === null) ?
-    n - 1 :
-    findBlockIndex__global__prevBlockIndex;
+  let left =
+    findBlockIndex__global__prevBlockIndex === null
+      ? 0
+      : findBlockIndex__global__prevBlockIndex;
+  let right =
+    findBlockIndex__global__prevBlockIndex === null
+      ? n - 1
+      : findBlockIndex__global__prevBlockIndex;
 
-  while (time < transcript[left].start_timestamp || time > transcript[right].end_timestamp) {
+  while (
+    time < transcript[left].start_timestamp ||
+    time > transcript[right].end_timestamp
+  ) {
     let dist = right - left + 1;
 
     if (time < transcript[left].start_timestamp) {
@@ -369,13 +395,14 @@ function findTranscriptBlockIndex(transcript, time) {
   return null;
 }
 
-
 function findTranscriptBlockSubindex(block, time) {
   const blockStartTime = block.start_timestamp;
   const blockEndTime = block.end_timestamp;
   const text = block.text;
   const textDuration = blockEndTime - blockStartTime;
-  const subIndex = Math.floor((time - blockStartTime) / textDuration * text.length);
+  const subIndex = Math.floor(
+    ((time - blockStartTime) / textDuration) * text.length
+  );
   return Math.max(0, Math.min(text.length - 1, subIndex));
 }
 
@@ -403,31 +430,43 @@ function set_audio_time_to_cursor(input) {
 
   if (audio.paused) {
     audio.currentTime = cursor_time;
-  } else if (Math.abs(audio.currentTime - cursor_time) > 10){
+  } else if (Math.abs(audio.currentTime - cursor_time) > 10) {
     audio.pause();
     audio.currentTime = cursor_time;
     audio.play();
   }
 }
 
+// A cached copy of the transcript for things that need to poll it very quickly
+// but don't want to incur the cost of reading it from DOM.
 let cached_transcript = null;
+window.setInterval(function () {
+  console.log("WOULD RELOAD NOW");
+}, 5000);
 
 function move_overlay_marker_to_audio_position() {
-  // TODO(woursler): Update this every few seconds?
-  if(cached_transcript === null) {
+  if (cached_transcript === null) {
     cached_transcript = extract_transcript_data();
   }
 
-  const audio_marker_idx = findTranscriptPositionFromTime(cached_transcript, audio.currentTime);
+  const audio_marker_idx = findTranscriptPositionFromTime(
+    cached_transcript,
+    audio.currentTime
+  );
 
   if (audio_marker_idx === null) {
     return;
   }
 
-  const audio_marker_block = document.getElementById(cached_transcript[audio_marker_idx.blockIndex].id);
+  const audio_marker_block = document.getElementById(
+    cached_transcript[audio_marker_idx.blockIndex].id
+  );
   const audio_marker_input = locate_transcript_input(audio_marker_block);
 
-  const { x, y } = get_textarea_cursor_xy(audio_marker_input, audio_marker_idx.characterIndex);
+  const { x, y } = get_textarea_cursor_xy(
+    audio_marker_input,
+    audio_marker_idx.characterIndex
+  );
 
   document
     .querySelector(".overlay-marker")
@@ -894,6 +933,21 @@ window.onload = () => {
       finish_loading();
     });
 };
+
+
+// When the window is resized, we need to recompute the size of the text areas.
+// But we don't want to do it on every event to avoid lagging things out.
+window.addEventListener(
+  "resize",
+  debounce(function () {
+    for (const transcript_block of document
+      .getElementById("transcript-blocks")
+      .querySelectorAll(".transcript-block")) {
+      const transcript_input = locate_transcript_input(transcript_block);
+      resize_and_trim_textarea(transcript_input);
+    }
+  }, 250)
+);
 
 // Shortcut for play / pause;
 // TODO(woursler): Ideally jump to the location associated with the click.
