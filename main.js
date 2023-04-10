@@ -946,7 +946,9 @@ window.addEventListener(
       const transcript_input = locate_transcript_input(transcript_block);
       resize_and_trim_textarea(transcript_input);
     }
-  }, 250)
+
+    move_overlay_marker_to_audio_position();
+  }, 100)
 );
 
 // Shortcut for play / pause;
