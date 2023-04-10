@@ -1,26 +1,26 @@
 function findTimeInBlock(block, index) {
   // Calculate the total duration of the block
-  const duration = block.end_time - block.start_time;
+  const duration = block.end_timestamp - block.start_timestamp;
 
   // Calculate the time offset of the given index within the block
   const offset = index / block.text.length * duration;
 
   // Limit the returned result to be within the block times.
   if (offset < 0) {
-    return block.start_time;
+    return block.start_timestamp;
   } else if (offset > duration) {
-    return block.end_time;
+    return block.end_timestamp;
   }
 
   // Calculate and return the time by adding the offset to the start time
-  return block.start_time + offset;
+  return block.start_timestamp + offset;
 }
 
 
 // Kep track of the last index we looked up, since many times we will deal with sequences of similar lookups and we can make the binary search much more efficient.
 let findBlockIndex__global__prevBlockIndex = null;
 
-function findBlockIndex(transcript, time) {
+function findTranscriptBlockIndex(transcript, time) {
   const n = transcript.length;
 
   let left = (findBlockIndex__global__prevBlockIndex === null) ?
@@ -30,16 +30,16 @@ function findBlockIndex(transcript, time) {
     n - 1 :
     findBlockIndex__global__prevBlockIndex;
 
-  while (time < transcript[left].start_time || time > transcript[right].end_time) {
+  while (time < transcript[left].start_timestamp || time > transcript[right].end_timestamp) {
     let dist = right - left + 1;
 
-    if (time < transcript[left].start_time) {
+    if (time < transcript[left].start_timestamp) {
       if (left <= 0) {
         break;
       }
       left = Math.max(left - dist, 0);
     }
-    if (time > transcript[right].end_time) {
+    if (time > transcript[right].end_timestamp) {
       if (right >= n - 1) {
         break;
       }
@@ -51,12 +51,12 @@ function findBlockIndex(transcript, time) {
     const mid = Math.floor((left + right) / 2);
     const block = transcript[mid];
 
-    if (time >= block.start_time && time < block.end_time) {
+    if (time >= block.start_timestamp && time < block.end_timestamp) {
       findBlockIndex__global__prevBlockIndex = mid;
       return mid;
     }
 
-    if (time < block.start_time) {
+    if (time < block.start_timestamp) {
       right = mid - 1;
     } else {
       left = mid + 1;
@@ -68,17 +68,17 @@ function findBlockIndex(transcript, time) {
 }
 
 
-function findSubBlockIndex(block, time) {
-  const blockStartTime = block.start_time;
-  const blockEndTime = block.end_time;
+function findTranscriptBlockSubindex(block, time) {
+  const blockStartTime = block.start_timestamp;
+  const blockEndTime = block.end_timestamp;
   const text = block.text;
   const textDuration = blockEndTime - blockStartTime;
   const subIndex = Math.floor((time - blockStartTime) / textDuration * text.length);
   return Math.max(0, Math.min(text.length - 1, subIndex));
 }
 
-function findBlockAndIndex(transcript, time) {
-  const blockIndex = findBlockIndex(transcript, time);
+function findTranscriptPositionFromTime(transcript, time) {
+  const blockIndex = findTranscriptBlockIndex(transcript, time);
 
   if (blockIndex === null) {
     // The time is before the start of the transcript
@@ -86,7 +86,7 @@ function findBlockAndIndex(transcript, time) {
   }
 
   const block = transcript[blockIndex];
-  const characterIndex = findSubBlockIndex(block, time);
+  const characterIndex = findTranscriptBlockSubindex(block, time);
 
   return {
     blockIndex,
@@ -95,28 +95,28 @@ function findBlockAndIndex(transcript, time) {
 }
 
 const transcript = [{
-    start_time: 0,
-    end_time: 2,
+    start_timestamp: 0,
+    end_timestamp: 2,
     text: 'Hello '
   },
   {
-    start_time: 2,
-    end_time: 4,
+    start_timestamp: 2,
+    end_timestamp: 4,
     text: 'world!'
   },
   {
-    start_time: 4,
-    end_time: 6,
+    start_timestamp: 4,
+    end_timestamp: 6,
     text: 'How are you?'
   },
   {
-    start_time: 6,
-    end_time: 8,
+    start_timestamp: 6,
+    end_timestamp: 8,
     text: 'I am doing well.'
   },
   {
-    start_time: 8,
-    end_time: 10,
+    start_timestamp: 8,
+    end_timestamp: 10,
     text: 'Thank you for asking.'
   }
 ];

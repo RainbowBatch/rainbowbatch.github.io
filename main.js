@@ -189,6 +189,8 @@ audio.addEventListener(
       .toISOString()
       .substring(11, 22);
 
+    move_overlay_marker_to_audio_position();
+
     if (segmentEnd !== null && audio.currentTime >= segmentEnd) {
       audio.pause();
       if (loop && segmentStart !== null) {
@@ -298,8 +300,134 @@ const get_textarea_cursor_xy = (input, selectionPoint) => {
   };
 };
 
-function move_overlay_marker_to_cursor(input) {
-  const { x, y } = get_textarea_cursor_xy(input, input.selectionEnd);
+function findTimeInBlock(block, index) {
+  // Calculate the total duration of the block
+  const duration = block.end_timestamp - block.start_timestamp;
+
+  // Calculate the time offset of the given index within the block
+  const offset = index / block.text.length * duration;
+
+  // Limit the returned result to be within the block times.
+  if (offset < 0) {
+    return block.start_timestamp;
+  } else if (offset > duration) {
+    return block.end_timestamp;
+  }
+
+  // Calculate and return the time by adding the offset to the start time
+  return block.start_timestamp + offset;
+}
+
+
+// Keep track of the last index we looked up, since many times we will deal with sequences of similar lookups and we can make the binary search much more efficient.
+let findBlockIndex__global__prevBlockIndex = null;
+
+function findTranscriptBlockIndex(transcript, time) {
+  const n = transcript.length;
+
+  let left = (findBlockIndex__global__prevBlockIndex === null) ?
+    0 :
+    findBlockIndex__global__prevBlockIndex;
+  let right = (findBlockIndex__global__prevBlockIndex === null) ?
+    n - 1 :
+    findBlockIndex__global__prevBlockIndex;
+
+  while (time < transcript[left].start_timestamp || time > transcript[right].end_timestamp) {
+    let dist = right - left + 1;
+
+    if (time < transcript[left].start_timestamp) {
+      if (left <= 0) {
+        break;
+      }
+      left = Math.max(left - dist, 0);
+    }
+    if (time > transcript[right].end_timestamp) {
+      if (right >= n - 1) {
+        break;
+      }
+      right = Math.min(right + dist, n - 1);
+    }
+  }
+
+  while (left <= right) {
+    const mid = Math.floor((left + right) / 2);
+    const block = transcript[mid];
+
+    if (time >= block.start_timestamp && time < block.end_timestamp) {
+      findBlockIndex__global__prevBlockIndex = mid;
+      return mid;
+    }
+
+    if (time < block.start_timestamp) {
+      right = mid - 1;
+    } else {
+      left = mid + 1;
+    }
+  }
+
+  // Note: Don't bother setting prevBlockIndex.
+  return null;
+}
+
+
+function findTranscriptBlockSubindex(block, time) {
+  const blockStartTime = block.start_timestamp;
+  const blockEndTime = block.end_timestamp;
+  const text = block.text;
+  const textDuration = blockEndTime - blockStartTime;
+  const subIndex = Math.floor((time - blockStartTime) / textDuration * text.length);
+  return Math.max(0, Math.min(text.length - 1, subIndex));
+}
+
+function findTranscriptPositionFromTime(transcript, time) {
+  const blockIndex = findTranscriptBlockIndex(transcript, time);
+
+  if (blockIndex === null) {
+    // The time is before the start of the transcript
+    return null;
+  }
+
+  const block = transcript[blockIndex];
+  const characterIndex = findTranscriptBlockSubindex(block, time);
+
+  return {
+    blockIndex,
+    characterIndex
+  };
+}
+
+function set_audio_time_to_cursor(input) {
+  const block_node = locate_transcript_block(input);
+  const block_data = extract_transcript_block_data(block_node);
+  const cursor_time = findTimeInBlock(block_data, input.selectionEnd);
+
+  if (audio.paused) {
+    audio.currentTime = cursor_time;
+  } else if (Math.abs(audio.currentTime - cursor_time) > 10){
+    audio.pause();
+    audio.currentTime = cursor_time;
+    audio.play();
+  }
+}
+
+let cached_transcript = null;
+
+function move_overlay_marker_to_audio_position() {
+  // TODO(woursler): Update this every few seconds?
+  if(cached_transcript === null) {
+    cached_transcript = extract_transcript_data();
+  }
+
+  const audio_marker_idx = findTranscriptPositionFromTime(cached_transcript, audio.currentTime);
+
+  if (audio_marker_idx === null) {
+    return;
+  }
+
+  const audio_marker_block = document.getElementById(cached_transcript[audio_marker_idx.blockIndex].id);
+  const audio_marker_input = locate_transcript_input(audio_marker_block);
+
+  const { x, y } = get_textarea_cursor_xy(audio_marker_input, audio_marker_idx.characterIndex);
 
   document
     .querySelector(".overlay-marker")
@@ -318,7 +446,7 @@ function process_transcript_block_event(e) {
   const next_block = this_block.nextElementSibling;
   const next_input = locate_transcript_input(next_block);
 
-  move_overlay_marker_to_cursor(this_input);
+  set_audio_time_to_cursor(this_input);
 
   if (e.type == "keydown") {
     if (e.key === "Enter" || e.keyCode === 13) {
@@ -362,7 +490,7 @@ function process_transcript_block_event(e) {
       new_input.focus();
       new_input.select();
       new_input.setSelectionRange(0, 0);
-      move_overlay_marker_to_cursor(new_input);
+      set_audio_time_to_cursor(new_input);
     }
     if ((e.key === "Backspace" || e.keyCode === 8) && selectionEnd == 0) {
       if (
@@ -382,7 +510,7 @@ function process_transcript_block_event(e) {
         this_block.remove();
         prev_input.focus();
         prev_input.setSelectionRange(previous_len, previous_len);
-        move_overlay_marker_to_cursor(prev_input);
+        set_audio_time_to_cursor(prev_input);
       }
     }
 
@@ -407,7 +535,7 @@ function process_transcript_block_event(e) {
         this_block.remove();
         next_input.focus();
         next_input.setSelectionRange(input_len, input_len);
-        move_overlay_marker_to_cursor(next_input);
+        set_audio_time_to_cursor(next_input);
       }
     }
   }
